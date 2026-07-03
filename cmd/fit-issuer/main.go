@@ -1,12 +1,9 @@
 package main
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"os"
-
-	"github.com/lestrrat-go/jwx/v2/jwk"
 
 	"github.com/3soos3/fit-issuer/internal/config"
 	"github.com/3soos3/fit-issuer/internal/handlers"
@@ -44,16 +41,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	oauthJWKS, err := jwk.Fetch(context.Background(), cfg.OAuthJWKSURL)
-	if err != nil {
-		slog.Error("oauth jwks fetch", "err", err)
-		os.Exit(1)
-	}
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/fss-jwks.json", handlers.JWKS(ks))
 	mux.HandleFunc("GET /health", handlers.Health(ks, store))
-	mux.HandleFunc("POST /fit/login", handlers.Login(cfg, ks, reg, oauthJWKS))
+	mux.HandleFunc("POST /fit/login", handlers.Login(cfg, ks, reg))
 	mux.HandleFunc("POST /fit/issue", handlers.Issue(cfg, ks, reg))
 	mux.HandleFunc("POST /fit/revoke", handlers.Revoke(cfg, store))
 	mux.HandleFunc("POST /fit/verify", handlers.Verify(cfg, ks, store))

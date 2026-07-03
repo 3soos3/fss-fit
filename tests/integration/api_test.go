@@ -100,20 +100,6 @@ func newTestEnv(t *testing.T) *testEnv {
 		t.Fatalf("revocation.New: %v", err)
 	}
 
-	// Build the JWKS set programmatically to avoid jwk.Fetch + OKP key matching issues
-	dexKID, err := keys.Thumbprint(dexPub)
-	if err != nil {
-		t.Fatalf("dex thumbprint: %v", err)
-	}
-	dexPubJWK, err := jwk.FromRaw(dexPub)
-	if err != nil {
-		t.Fatalf("jwk from raw dex pub: %v", err)
-	}
-	_ = dexPubJWK.Set(jwk.KeyIDKey, dexKID)
-	_ = dexPubJWK.Set(jwk.AlgorithmKey, jwa.EdDSA)
-	oauthJWKS := jwk.NewSet()
-	_ = oauthJWKS.AddKey(dexPubJWK)
-
 	// Use testIssuer as FIT_ISSUER_URL so FSS-0006 vectors' iss matches
 	cfg := &config.Config{
 		IssuerURL:           testIssuer,
@@ -135,7 +121,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/fss-jwks.json", handlers.JWKS(ks))
 	mux.HandleFunc("GET /health", handlers.Health(ks, store))
-	mux.HandleFunc("POST /fit/login", handlers.Login(cfg, ks, reg, oauthJWKS))
+	mux.HandleFunc("POST /fit/login", handlers.Login(cfg, ks, reg))
 	mux.HandleFunc("POST /fit/issue", handlers.Issue(cfg, ks, reg))
 	mux.HandleFunc("POST /fit/revoke", handlers.Revoke(cfg, store))
 	mux.HandleFunc("POST /fit/verify", handlers.Verify(cfg, ks, store))
@@ -162,6 +148,7 @@ func buildJWKS(pub ed25519.PublicKey) ([]byte, error) {
 				"kid": kid,
 				"x":   base64.RawURLEncoding.EncodeToString(pub),
 				"use": "sig",
+				"alg": "EdDSA",
 			},
 		},
 	}

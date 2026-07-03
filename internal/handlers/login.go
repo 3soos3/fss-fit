@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v2/jwk"
@@ -16,7 +17,40 @@ import (
 )
 
 // Login handles POST /fit/login: validates a Dex Bearer JWT and issues a public FIT.
-func Login(cfg *config.Config, ks *keys.KeyStore, reg *profiles.Registry, oauthJWKS jwk.Set) http.HandlerFunc {
+// The OAuth JWKS is fetched lazily on first call and cached; it is re-fetched once
+// on signature failure to handle key rotation without requiring a server restart.
+func Login(cfg *config.Config, ks *keys.KeyStore, reg *profiles.Registry) http.HandlerFunc {
+	var mu sync.Mutex
+	var cached jwk.Set
+
+	fetch := func() (jwk.Set, error) {
+		return jwk.Fetch(context.Background(), cfg.OAuthJWKSURL)
+	}
+
+	getJWKS := func() (jwk.Set, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if cached == nil {
+			var err error
+			cached, err = fetch()
+			if err != nil {
+				return nil, err
+			}
+		}
+		return cached, nil
+	}
+
+	refreshJWKS := func() (jwk.Set, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		fresh, err := fetch()
+		if err != nil {
+			return nil, err
+		}
+		cached = fresh
+		return cached, nil
+	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		bearer := bearerToken(r)
 		if bearer == "" {
@@ -24,15 +58,21 @@ func Login(cfg *config.Config, ks *keys.KeyStore, reg *profiles.Registry, oauthJ
 			return
 		}
 
+		jwks, err := getJWKS()
+		if err != nil {
+			slog.Error("fetch OAuth JWKS", "err", err)
+			errJSON(w, http.StatusServiceUnavailable, "OAuth JWKS unavailable")
+			return
+		}
+
 		dexTok, err := jwt.Parse([]byte(bearer),
-			jwt.WithKeySet(oauthJWKS),
+			jwt.WithKeySet(jwks),
 			jwt.WithIssuer(cfg.OAuthIssuerURL),
 			jwt.WithValidate(true),
 		)
 		if err != nil {
-			// Retry with fresh JWKS once (key rotation)
-			fresh, ferr := jwk.Fetch(context.Background(), cfg.OAuthJWKSURL)
-			if ferr == nil {
+			// Re-fetch once to handle key rotation, then retry
+			if fresh, ferr := refreshJWKS(); ferr == nil {
 				dexTok, err = jwt.Parse([]byte(bearer),
 					jwt.WithKeySet(fresh),
 					jwt.WithIssuer(cfg.OAuthIssuerURL),
