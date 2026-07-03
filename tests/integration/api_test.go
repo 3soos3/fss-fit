@@ -100,6 +100,22 @@ func newTestEnv(t *testing.T) *testEnv {
 		t.Fatalf("revocation.New: %v", err)
 	}
 
+	// Build JWKS set programmatically — jwk.Fetch + OKP key matching in lestrrat-go/jwx/v2
+	// requires "alg":"EdDSA" in the JWKS entry; building directly avoids any fetch latency
+	// in tests and keeps the handler signature (oauthJWKS jwk.Set) testable.
+	dexKID, err := keys.Thumbprint(dexPub)
+	if err != nil {
+		t.Fatalf("dex thumbprint: %v", err)
+	}
+	dexPubJWK, err := jwk.FromRaw(dexPub)
+	if err != nil {
+		t.Fatalf("jwk from raw: %v", err)
+	}
+	_ = dexPubJWK.Set(jwk.KeyIDKey, dexKID)
+	_ = dexPubJWK.Set(jwk.AlgorithmKey, jwa.EdDSA)
+	oauthJWKS := jwk.NewSet()
+	_ = oauthJWKS.AddKey(dexPubJWK)
+
 	// Use testIssuer as FIT_ISSUER_URL so FSS-0006 vectors' iss matches
 	cfg := &config.Config{
 		IssuerURL:           testIssuer,
@@ -121,7 +137,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/fss-jwks.json", handlers.JWKS(ks))
 	mux.HandleFunc("GET /health", handlers.Health(ks, store))
-	mux.HandleFunc("POST /fit/login", handlers.Login(cfg, ks, reg))
+	mux.HandleFunc("POST /fit/login", handlers.Login(cfg, ks, reg, oauthJWKS))
 	mux.HandleFunc("POST /fit/issue", handlers.Issue(cfg, ks, reg))
 	mux.HandleFunc("POST /fit/revoke", handlers.Revoke(cfg, store))
 	mux.HandleFunc("POST /fit/verify", handlers.Verify(cfg, ks, store))
