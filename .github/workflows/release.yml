@@ -35,6 +35,9 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Derive semver tag
+        id: semver
+        run: echo "tag=${GITHUB_REF_NAME#F0006-v}" >> "$GITHUB_OUTPUT"
       - name: Build and push
         id: build
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1
@@ -43,8 +46,10 @@ jobs:
           push: true
           tags: |
             ${{ env.GHCR_IMAGE }}:${{ github.ref_name }}
+            ${{ env.GHCR_IMAGE }}:${{ steps.semver.outputs.tag }}
             ${{ env.GHCR_IMAGE }}:latest
             ${{ vars.DOCKERHUB_REPO != '' && format('{0}:{1}', vars.DOCKERHUB_REPO, github.ref_name) || '' }}
+            ${{ vars.DOCKERHUB_REPO != '' && format('{0}:{1}', vars.DOCKERHUB_REPO, steps.semver.outputs.tag) || '' }}
             ${{ vars.DOCKERHUB_REPO != '' && format('{0}:latest', vars.DOCKERHUB_REPO) || '' }}
           build-args: |
             VERSION=${{ github.ref_name }}
