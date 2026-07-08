@@ -82,7 +82,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@18f2505d82f80e8b36e6e5be3b6a6697c0c7a294
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.GHCR_IMAGE }}:${{ github.ref_name }}
           format: sarif
