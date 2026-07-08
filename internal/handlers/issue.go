@@ -61,10 +61,15 @@ func Issue(cfg *config.Config, ks *keys.KeyStore, reg *profiles.Registry) http.H
 		if validity == 0 {
 			validity = cfg.DefaultValidityDays
 		}
+		aud := req.Audience
+		if len(aud) == 0 {
+			aud = cfg.Audience
+		}
 		now := time.Now()
 		c := tokens.FITClaims{
 			ISS:                      cfg.IssuerURL,
-			AUD:                      cfg.Audience,
+			SUB:                      req.AuthorizedAnalyst,
+			AUD:                      aud,
 			IAT:                      now.Unix(),
 			NBF:                      now.Unix(),
 			EXP:                      now.Add(time.Duration(validity) * 24 * time.Hour).Unix(),

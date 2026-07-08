@@ -12,6 +12,7 @@ import (
 	"github.com/3soos3/fit-issuer/internal/config"
 	"github.com/3soos3/fit-issuer/internal/handlers"
 	"github.com/3soos3/fit-issuer/internal/keys"
+	"github.com/3soos3/fit-issuer/internal/oauthproxy"
 	"github.com/3soos3/fit-issuer/internal/profiles"
 	"github.com/3soos3/fit-issuer/internal/revocation"
 )
@@ -58,6 +59,28 @@ func main() {
 	mux.HandleFunc("POST /fit/issue", handlers.Issue(cfg, ks, reg))
 	mux.HandleFunc("POST /fit/revoke", handlers.Revoke(cfg, store))
 	mux.HandleFunc("POST /fit/verify", handlers.Verify(cfg, ks, store))
+
+	// OAuth proxy — opt-in, activated only when OAUTH_SERVER_URL is set.
+	if cfg.OAuthServerURL != "" {
+		proxy := oauthproxy.New(
+			oauthproxy.Config{
+				ServerURL:            cfg.OAuthServerURL,
+				DexAuthURL:           cfg.DexAuthURL,
+				DexTokenURL:          cfg.DexTokenURL,
+				DexProxyClientID:     cfg.DexProxyClientID,
+				DexProxyClientSecret: cfg.DexProxyClientSecret,
+				MCPClientID:          cfg.MCPClientID,
+				MCPClientSecret:      cfg.MCPClientSecret,
+			},
+			handlers.MakeLoginFunc(cfg, ks, reg, oauthJWKS),
+		)
+		proxy.RegisterRoutes(mux)
+		slog.Info("oauth-proxy enabled",
+			"server_url",    cfg.OAuthServerURL,
+			"dex_auth_url",  cfg.DexAuthURL,
+			"mcp_client_id", cfg.MCPClientID,
+		)
+	}
 
 	slog.Info("fit-issuer starting", "addr", ":8090")
 	if err := http.ListenAndServe(":8090", mux); err != nil {

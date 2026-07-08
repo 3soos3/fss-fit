@@ -17,6 +17,14 @@ type Config struct {
 	AuthorityToken      string
 	DataDir             string
 	ProfilesConfig      string
+	// OAuth proxy fields (optional — enabled when OAuthServerURL != "")
+	OAuthServerURL       string // e.g. "http://fit.forensic-test.local"
+	DexAuthURL           string // e.g. "http://dex.forensic-test.local/dex/auth"
+	DexTokenURL          string // e.g. "http://dex.forensic-test.local/dex/token"
+	DexProxyClientID     string // Dex client ID used by fss-fit as proxy
+	DexProxyClientSecret string // Dex client secret for the proxy client
+	MCPClientID          string // OAuth client_id for Claude Desktop / MCP clients
+	MCPClientSecret      string // OAuth client_secret for Claude Desktop / MCP clients
 }
 
 func Load() (*Config, error) {
@@ -29,7 +37,14 @@ func Load() (*Config, error) {
 		AuthorityToken:      getenv("FIT_AUTHORITY_TOKEN", ""),
 		DataDir:             getenv("FIT_DATA_DIR", "/data"),
 	}
-	c.ProfilesConfig = getenv("FIT_PROFILES_CONFIG", c.DataDir+"/profiles.yaml")
+	c.ProfilesConfig        = getenv("FIT_PROFILES_CONFIG", c.DataDir+"/profiles.yaml")
+	c.OAuthServerURL        = getenv("OAUTH_SERVER_URL", "")
+	c.DexAuthURL            = getenv("DEX_AUTH_URL", "")
+	c.DexTokenURL           = getenv("DEX_TOKEN_URL", "")
+	c.DexProxyClientID      = getenv("DEX_PROXY_CLIENT_ID", "")
+	c.DexProxyClientSecret  = getenv("DEX_PROXY_CLIENT_SECRET", "")
+	c.MCPClientID           = getenv("MCP_CLIENT_ID", "claude-desktop")
+	c.MCPClientSecret       = getenv("MCP_CLIENT_SECRET", "")
 
 	if raw := getenv("FIT_AUDIENCE", ""); raw != "" {
 		for _, a := range strings.Split(raw, ",") {
