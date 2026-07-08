@@ -104,6 +104,60 @@ func TestMerge(t *testing.T) {
 	}
 }
 
+func TestForResource(t *testing.T) {
+	const yaml = `
+profiles:
+  public:
+    authorized_tools: ["any_tool"]
+    purpose: "public fallback"
+  solveit:
+    authorized_tools: ["search_technique"]
+    audience: ["https://solve-it.example.org"]
+    purpose: "solveit profile"
+  hansken:
+    authorized_tools: ["search_artifacts"]
+    audience: ["https://hansken.example.org"]
+    purpose: "hansken profile"
+`
+	dir := t.TempDir()
+	path := dir + "/profiles.yaml"
+	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
+		t.Fatalf("write yaml: %v", err)
+	}
+	r, err := profiles.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	t.Run("matches solveit audience", func(t *testing.T) {
+		p := r.ForResource("https://solve-it.example.org")
+		if p.Purpose != "solveit profile" {
+			t.Errorf("got purpose %q, want solveit profile", p.Purpose)
+		}
+	})
+
+	t.Run("matches hansken audience", func(t *testing.T) {
+		p := r.ForResource("https://hansken.example.org")
+		if p.Purpose != "hansken profile" {
+			t.Errorf("got purpose %q, want hansken profile", p.Purpose)
+		}
+	})
+
+	t.Run("no match falls back to public", func(t *testing.T) {
+		p := r.ForResource("https://unknown.example.org")
+		if p.Purpose != "public fallback" {
+			t.Errorf("got purpose %q, want public fallback", p.Purpose)
+		}
+	})
+
+	t.Run("empty resource falls back to public", func(t *testing.T) {
+		p := r.ForResource("")
+		if p.Purpose != "public fallback" {
+			t.Errorf("got purpose %q, want public fallback", p.Purpose)
+		}
+	})
+}
+
 func TestMergeExplicitOverrides(t *testing.T) {
 	base := &profiles.Profile{
 		AuthorizedTools: []string{"get_technique"},

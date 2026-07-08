@@ -11,6 +11,7 @@ import (
 // Profile holds the claim defaults for a named FIT profile.
 type Profile struct {
 	AuthorizedTools          []string `yaml:"authorized_tools"`
+	Audience                 []string `yaml:"audience"`
 	Purpose                  string   `yaml:"purpose"`
 	ValidityDays             int      `yaml:"validity_days"`
 	InvocationTypesPermitted []string `yaml:"invocation_types_permitted"`
@@ -71,12 +72,28 @@ func (r *Registry) Public() *Profile {
 	return defaultPublic()
 }
 
+// ForResource returns the first profile whose Audience list contains resourceURL,
+// falling back to the public profile if none matches.
+func (r *Registry) ForResource(resourceURL string) *Profile {
+	if resourceURL != "" {
+		for _, p := range r.profiles {
+			for _, a := range p.Audience {
+				if a == resourceURL {
+					return p
+				}
+			}
+		}
+	}
+	return r.Public()
+}
+
 // IssueRequest holds caller-supplied fields for POST /fit/issue.
 type IssueRequest struct {
 	Profile                  string   `json:"profile"`
 	InvestigationID          string   `json:"investigation_id"`
 	AuthorizedAnalyst        string   `json:"authorized_analyst"`
 	AuthorizedTools          []string `json:"authorized_tools"`
+	Audience                 []string `json:"audience"`
 	LegalAuthority           string   `json:"legal_authority"`
 	Purpose                  string   `json:"purpose"`
 	ValidDays                int      `json:"valid_days"`
@@ -91,6 +108,7 @@ type IssueRequest struct {
 func Merge(base *Profile, req *IssueRequest) *IssueRequest {
 	out := *req
 	if len(out.AuthorizedTools) == 0         { out.AuthorizedTools = base.AuthorizedTools }
+	if len(out.Audience) == 0                { out.Audience = base.Audience }
 	if out.Purpose == ""                      { out.Purpose = base.Purpose }
 	if out.ValidDays == 0                     { out.ValidDays = base.ValidityDays }
 	if len(out.InvocationTypesPermitted) == 0 { out.InvocationTypesPermitted = base.InvocationTypesPermitted }
