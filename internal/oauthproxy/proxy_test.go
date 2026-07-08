@@ -279,7 +279,7 @@ func TestOAuthCallback_DexFails(t *testing.T) {
 
 func TestOAuthCallback_LoginFnFails(t *testing.T) {
 	dex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"id_token": "dex-token"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"id_token": "dex-token"})
 	}))
 	defer dex.Close()
 
@@ -322,7 +322,7 @@ func TestOAuthFullFlow(t *testing.T) {
 			http.Error(w, "wrong code", 400)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]string{"id_token": dexIDToken})
+		_ = json.NewEncoder(w).Encode(map[string]string{"id_token": dexIDToken})
 	}))
 	defer dex.Close()
 
@@ -461,7 +461,7 @@ func TestOAuthFullFlow_ResourceThreaded(t *testing.T) {
 			http.Error(w, "bad form", 400)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]string{"id_token": dexIDToken})
+		_ = json.NewEncoder(w).Encode(map[string]string{"id_token": dexIDToken})
 	}))
 	defer dex.Close()
 
@@ -540,7 +540,7 @@ func TestOAuthFullFlow_ResourceThreaded(t *testing.T) {
 // TestOAuthToken_PKCEMismatch confirms that a wrong code_verifier is rejected.
 func TestOAuthToken_PKCEMismatch(t *testing.T) {
 	dex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"id_token": "tok"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"id_token": "tok"})
 	}))
 	defer dex.Close()
 
@@ -596,7 +596,7 @@ func TestOAuthToken_PKCEMismatch(t *testing.T) {
 // TestOAuthToken_BasicAuth confirms the token endpoint accepts HTTP Basic auth.
 func TestOAuthToken_BasicAuth(t *testing.T) {
 	dex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"id_token": "tok"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"id_token": "tok"})
 	}))
 	defer dex.Close()
 

@@ -45,7 +45,7 @@ func main() {
 	// GET /keys — JWKS document
 	mux.HandleFunc("GET /keys", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(jwksBytes)
+		_, _ = w.Write(jwksBytes)
 	})
 
 	// GET /token?sub=<sub>&exp=<seconds> — signed JWT for fit/login testing
@@ -69,7 +69,7 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"token": string(signed)})
+		_ = json.NewEncoder(w).Encode(map[string]string{"token": string(signed)})
 	})
 
 	fmt.Printf("mockdex issuer:   %s\n", issuer)
