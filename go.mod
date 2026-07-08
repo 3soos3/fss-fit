@@ -1,6 +1,6 @@
 module github.com/3soos3/fit-issuer
 
-go 1.26
+go 1.24
 
 require (
 	github.com/google/uuid v1.6.0
