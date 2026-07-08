@@ -1,10 +1,10 @@
 # fit-issuer
 
-A standalone Go service that issues and verifies **Forensic Investigation Tokens (FIT)** as defined in FSS-0008. FITs are signed JWTs that authorize a named analyst to call specific MCP tools for a specific investigation — carrying the legal authority, purpose, and tool-scope of the forensic engagement.
+A standalone Go service that issues and verifies **Forensic Investigation Tokens (FIT)** as defined in FSS-0006. FITs are signed JWTs that authorize a named analyst to call specific MCP tools for a specific investigation — carrying the legal authority, purpose, and tool-scope of the forensic engagement.
 
 - **Image**: `ghcr.io/3soos3/fit-issuer`
 - **Port**: `:8090`
-- **Tag format**: `F0008-vX.Y.Z` (X.Y = FSS-0008 standard version; Z = service patch)
+- **Tag format**: `F0006-vX.Y.Z` (X.Y = FSS-0006 standard version; Z = service patch)
 
 ---
 
@@ -21,7 +21,7 @@ A FIT is a `FIT+JWT` signed with Ed25519. It binds together:
 | `purpose` | `Identify malware persistence techniques` |
 | `aud` | MCP server URL(s) |
 
-When an MCP server receives a tool call, its middleware calls `POST /fit/verify` with the FIT, the tool name, the caller identity, and the server ID. The verifier runs 11 checks (FSS-0008 §8.2) in order and returns `{"valid": true}` plus extracted claims, or the failed step and reason.
+When an MCP server receives a tool call, its middleware calls `POST /fit/verify` with the FIT, the tool name, the caller identity, and the server ID. The verifier runs 11 checks (FSS-0006 §8.2) in order and returns `{"valid": true}` plus extracted claims, or the failed step and reason.
 
 ---
 
@@ -197,7 +197,7 @@ On first start, an Ed25519 keypair is generated and written to `$FIT_DATA_DIR/si
 ## Security notes
 
 - **`authorized_tools` are Go regexp patterns**, anchored `^(?:pattern)$` at verify time. Catch-all patterns (`.*`, `.+`) are rejected at issuance.
-- **Revocation** uses atomic file writes (write to `.tmp`, rename). The in-memory set is the hot path; the JSON file is reloaded on a ≤5-minute TTL per FSS-0008 §10.2.
+- **Revocation** uses atomic file writes (write to `.tmp`, rename). The in-memory set is the hot path; the JSON file is reloaded on a ≤5-minute TTL per FSS-0006 §10.2.
 - `POST /fit/verify` failures log `event=FSS_AUTH_DENIED` with `failed_step` and `reason` — FIT content is never logged.
 - The container runs as `nonroot:nonroot` (uid 65532) on a distroless base; `/data` is the only writable volume.
 
@@ -208,7 +208,7 @@ On first start, an Ed25519 keypair is generated and written to `$FIT_DATA_DIR/si
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `gate.yml` | Every PR | golangci-lint, go vet, unit tests (`-race`), integration tests, build check |
-| `release.yml` | `F0008-v*` tag | Multi-arch build (amd64/arm64), push GHCR + Docker Hub, Trivy scan (fail on CRITICAL), cosign sign, Syft SBOM, Zenodo deposit |
+| `release.yml` | `F0006-v*` tag | Multi-arch build (amd64/arm64), push GHCR + Docker Hub, Trivy scan (fail on CRITICAL), cosign sign, Syft SBOM, Zenodo deposit |
 | `security.yml` | Weekly | govulncheck, CodeQL, Trivy on `:latest`, OpenSSF Scorecard |
 
 All GitHub Actions use pinned commit SHA hashes.
