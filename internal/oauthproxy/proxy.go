@@ -306,7 +306,7 @@ func exchangeDexCode(cfg Config, code string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("dex token POST: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("dex token %s: %s", resp.Status, body)

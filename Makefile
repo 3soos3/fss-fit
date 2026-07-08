@@ -12,7 +12,10 @@ test-integration:
 	go test ./tests/integration/... -count=1 -v -timeout 60s
 
 lint:
-	golangci-lint run ./...
+	@which golangci-lint >/dev/null 2>&1 || \
+		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | \
+		sh -s -- -b $$(go env GOPATH)/bin
+	$$(go env GOPATH)/bin/golangci-lint run ./...
 
 vet:
 	go vet ./...

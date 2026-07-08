@@ -372,7 +372,7 @@ func TestOAuthFullFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authorize: %v", err)
 	}
-	authResp.Body.Close()
+	_ = authResp.Body.Close()
 	if authResp.StatusCode != http.StatusFound {
 		t.Fatalf("authorize: want 302, got %d", authResp.StatusCode)
 	}
@@ -390,7 +390,7 @@ func TestOAuthFullFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("callback: %v", err)
 	}
-	cbResp.Body.Close()
+	_ = cbResp.Body.Close()
 	if cbResp.StatusCode != http.StatusFound {
 		t.Fatalf("callback: want 302, got %d", cbResp.StatusCode)
 	}
@@ -414,7 +414,7 @@ func TestOAuthFullFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("token: %v", err)
 	}
-	defer tokResp.Body.Close()
+	defer func() { _ = tokResp.Body.Close() }()
 	if tokResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(tokResp.Body)
 		t.Fatalf("token: want 200, got %d: %s", tokResp.StatusCode, body)
@@ -442,7 +442,7 @@ func TestOAuthFullFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reuse: %v", err)
 	}
-	reuse.Body.Close()
+	_ = reuse.Body.Close()
 	if reuse.StatusCode != http.StatusBadRequest {
 		t.Errorf("code reuse: want 400, got %d", reuse.StatusCode)
 	}
@@ -503,7 +503,7 @@ func TestOAuthFullFlow_ResourceThreaded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authorize: %v", err)
 	}
-	authResp.Body.Close()
+	_ = authResp.Body.Close()
 	dexLoc, _ := url.Parse(authResp.Header.Get("Location"))
 	internalState := dexLoc.Query().Get("state")
 
@@ -515,7 +515,7 @@ func TestOAuthFullFlow_ResourceThreaded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("callback: %v", err)
 	}
-	cbResp.Body.Close()
+	_ = cbResp.Body.Close()
 	clientLoc, _ := url.Parse(cbResp.Header.Get("Location"))
 	code := clientLoc.Query().Get("code")
 
@@ -530,7 +530,7 @@ func TestOAuthFullFlow_ResourceThreaded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("token: %v", err)
 	}
-	tokResp.Body.Close()
+	_ = tokResp.Body.Close()
 
 	if gotResource != wantResource {
 		t.Errorf("resource threaded to loginFn: got %q, want %q", gotResource, wantResource)
@@ -568,13 +568,13 @@ func TestOAuthToken_PKCEMismatch(t *testing.T) {
 		"client_id": {testClientID}, "redirect_uri": {"http://cb"},
 		"state": {"s"}, "code_challenge": {challenge}, "code_challenge_method": {"S256"},
 	}.Encode())
-	authResp.Body.Close()
+	_ = authResp.Body.Close()
 	dexLoc, _ := url.Parse(authResp.Header.Get("Location"))
 
 	cbResp, _ := client.Get(fitSrv.URL + "/oauth/callback?" + url.Values{
 		"code": {"dex-code"}, "state": {dexLoc.Query().Get("state")},
 	}.Encode())
-	cbResp.Body.Close()
+	_ = cbResp.Body.Close()
 	clientLoc, _ := url.Parse(cbResp.Header.Get("Location"))
 	code := clientLoc.Query().Get("code")
 
@@ -586,7 +586,7 @@ func TestOAuthToken_PKCEMismatch(t *testing.T) {
 		"client_id":     {testClientID},
 		"client_secret": {testClientSecret},
 	})
-	tokResp.Body.Close()
+	_ = tokResp.Body.Close()
 
 	if tokResp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("PKCE mismatch: want 400, got %d", tokResp.StatusCode)
@@ -624,13 +624,13 @@ func TestOAuthToken_BasicAuth(t *testing.T) {
 		"client_id": {testClientID}, "redirect_uri": {"http://cb"},
 		"state": {"s"}, "code_challenge": {challenge}, "code_challenge_method": {"S256"},
 	}.Encode())
-	authResp.Body.Close()
+	_ = authResp.Body.Close()
 	dexLoc, _ := url.Parse(authResp.Header.Get("Location"))
 
 	cbResp, _ := client.Get(fitSrv.URL + "/oauth/callback?" + url.Values{
 		"code": {"dex-code"}, "state": {dexLoc.Query().Get("state")},
 	}.Encode())
-	cbResp.Body.Close()
+	_ = cbResp.Body.Close()
 	clientLoc, _ := url.Parse(cbResp.Header.Get("Location"))
 	code := clientLoc.Query().Get("code")
 
@@ -648,7 +648,7 @@ func TestOAuthToken_BasicAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("token: %v", err)
 	}
-	defer tokResp.Body.Close()
+	defer func() { _ = tokResp.Body.Close() }()
 	if tokResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(tokResp.Body)
 		t.Fatalf("want 200, got %d: %s", tokResp.StatusCode, body)
