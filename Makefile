@@ -23,4 +23,4 @@ vuln:
 image:
 	podman build -t fit-issuer:local .
 
-ci: vet test
+ci: lint vet test

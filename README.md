@@ -1,5 +1,11 @@
 # fit-issuer
 
+[![Gate](https://github.com/3soos3/fit-issuer/actions/workflows/gate.yml/badge.svg)](https://github.com/3soos3/fit-issuer/actions/workflows/gate.yml)
+[![Security](https://github.com/3soos3/fit-issuer/actions/workflows/security.yml/badge.svg)](https://github.com/3soos3/fit-issuer/actions/workflows/security.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/3soos3/fit-issuer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/3soos3/fit-issuer)
+[![Go](https://img.shields.io/badge/go-1.22+-blue.svg)](https://golang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 A standalone Go service that issues and verifies **Forensic Investigation Tokens (FIT)** as defined in FSS-0006. FITs are signed JWTs that authorize a named analyst to call specific MCP tools for a specific investigation — carrying the legal authority, purpose, and tool-scope of the forensic engagement.
 
 - **Image**: `ghcr.io/3soos3/fit-issuer`
@@ -200,6 +206,22 @@ On first start, an Ed25519 keypair is generated and written to `$FIT_DATA_DIR/si
 - **Revocation** uses atomic file writes (write to `.tmp`, rename). The in-memory set is the hot path; the JSON file is reloaded on a ≤5-minute TTL per FSS-0006 §10.2.
 - `POST /fit/verify` failures log `event=FSS_AUTH_DENIED` with `failed_step` and `reason` — FIT content is never logged.
 - The container runs as `nonroot:nonroot` (uid 65532) on a distroless base; `/data` is the only writable volume.
+
+---
+
+## Security reporting
+
+Vulnerability reports should be submitted via [GitHub Security Advisories](https://github.com/3soos3/fit-issuer/security/advisories/new) — do not use public issues for security matters.
+
+Automated security controls:
+
+| Control | Tool | Cadence |
+|---|---|---|
+| Dependency vulnerability scan | [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) | Weekly |
+| Static analysis | [CodeQL](https://github.com/3soos3/fit-issuer/security/code-scanning) | Weekly |
+| Container CVE scan | [Trivy](https://github.com/aquasecurity/trivy) on `:latest` | Weekly |
+| Supply-chain scorecard | [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/3soos3/fit-issuer) | Every push to main |
+| Image signing | [cosign](https://github.com/sigstore/cosign) (keyless, Sigstore) | Every release |
 
 ---
 

@@ -3,20 +3,88 @@ on:
   schedule:
     - cron: '0 8 * * 1'
   workflow_dispatch:
+
+permissions: read-all
+
 jobs:
-  security:
+  govulncheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a
         with:
           go-version: "1.22"
-      - name: govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          cache: true
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
+      - run: govulncheck ./...
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: github/codeql-action/init@45775bd8235c68ba998cffa5171334d58593da47
         with:
           languages: go
       - uses: github/codeql-action/autobuild@45775bd8235c68ba998cffa5171334d58593da47
       - uses: github/codeql-action/analyze@45775bd8235c68ba998cffa5171334d58593da47
+
+  trivy-latest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull :latest
+        run: docker pull ghcr.io/3soos3/fit-issuer:latest
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@18f2505d82f80e8b36e6e5be3b6a6697c0c7a294
+        with:
+          image-ref: ghcr.io/3soos3/fit-issuer:latest
+          format: sarif
+          output: trivy-latest.sarif
+          severity: CRITICAL,HIGH
+          scanners: vuln
+        continue-on-error: true
+      - uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e
+        if: always()
+        with:
+          sarif_file: trivy-latest.sarif
+        continue-on-error: true
+      - name: Fail on CRITICAL
+        run: |
+          COUNT=$(trivy image ghcr.io/3soos3/fit-issuer:latest \
+            --format json --severity CRITICAL --scanners vuln --quiet \
+            | jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length')
+          [ "$COUNT" -gt 0 ] && echo "::error::${COUNT} CRITICAL CVEs in :latest" && exit 1
+          echo "::notice::No CRITICAL CVEs in :latest"
+
+  scorecard:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e
+        with:
+          sarif_file: results.sarif

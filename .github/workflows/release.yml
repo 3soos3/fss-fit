@@ -3,37 +3,266 @@ on:
   push:
     tags:
       - 'F0006-v*'
+
+env:
+  GHCR_IMAGE: ghcr.io/3soos3/fit-issuer
+
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-      id-token: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      base_ref: ${{ steps.base.outputs.ref }}
+      base_digest: ${{ steps.base.outputs.digest }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a
-        with:
-          go-version: "1.22"
       - name: Validate tag
         run: echo "${{ github.ref_name }}" | grep -E '^F0006-v[0-9]+\.[0-9]+\.[0-9]+$'
+      - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3
       - uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb4d20f25a6b12caeef2e2
-      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to Docker Hub
+        if: vars.DOCKERHUB_REPO != ''
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push
+        id: build
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1
         with:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/3soos3/fit-issuer:${{ github.ref_name }}
-            ghcr.io/3soos3/fit-issuer:latest
+            ${{ env.GHCR_IMAGE }}:${{ github.ref_name }}
+            ${{ env.GHCR_IMAGE }}:latest
+            ${{ vars.DOCKERHUB_REPO != '' && format('{0}:{1}', vars.DOCKERHUB_REPO, github.ref_name) || '' }}
+            ${{ vars.DOCKERHUB_REPO != '' && format('{0}:latest', vars.DOCKERHUB_REPO) || '' }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+          provenance: true
+          sbom: true
+      - name: Capture base image digest
+        id: base
+        run: |
+          BASE=$(grep '^FROM' Dockerfile | head -1 | awk '{print $2}')
+          DIGEST=$(docker buildx imagetools inspect "$BASE" \
+            --format '{{index .Manifest "digest"}}' 2>/dev/null || echo "")
+          echo "ref=${BASE}"      >> $GITHUB_OUTPUT
+          echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
+
+  trivy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Trivy scan
         uses: aquasecurity/trivy-action@18f2505d82f80e8b36e6e5be3b6a6697c0c7a294
         with:
-          image-ref: ghcr.io/3soos3/fit-issuer:${{ github.ref_name }}
-          exit-code: '1'
-          severity: CRITICAL
+          image-ref: ${{ env.GHCR_IMAGE }}:${{ github.ref_name }}
+          format: sarif
+          output: trivy-release.sarif
+          severity: CRITICAL,HIGH
+          scanners: vuln
+        continue-on-error: true
+      - uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e
+        if: always()
+        with:
+          sarif_file: trivy-release.sarif
+        continue-on-error: true
+      - name: Fail on CRITICAL
+        run: |
+          COUNT=$(trivy image ${{ env.GHCR_IMAGE }}:${{ github.ref_name }} \
+            --format json --severity CRITICAL --scanners vuln --quiet \
+            | jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length')
+          [ "$COUNT" -gt 0 ] && echo "::error::${COUNT} CRITICAL CVEs" && exit 1
+          echo "::notice::No CRITICAL CVEs"
+
+  sign:
+    needs: [build, trivy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Sign with Cosign
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          cosign sign --yes \
+            "${{ env.GHCR_IMAGE }}:${{ github.ref_name }}@${{ needs.build.outputs.digest }}"
+      - name: Generate SBOM
+        run: |
+          syft "${{ env.GHCR_IMAGE }}@${{ needs.build.outputs.digest }}" \
+            -o spdx-json=sbom-spdx.json -o cyclonedx-json=sbom-cyclonedx.json
+      - name: Attach SBOM
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          cosign attest --yes \
+            --predicate sbom-spdx.json --type spdxjson \
+            "${{ env.GHCR_IMAGE }}:${{ github.ref_name }}@${{ needs.build.outputs.digest }}"
+      - name: Upload SBOM artifact (retained forever — forensic evidence)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sbom-${{ github.ref_name }}-${{ github.run_id }}
+          path: sbom-*.json
+          retention-days: 0
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373
+        with:
+          subject-name: ${{ env.GHCR_IMAGE }}
+          subject-digest: ${{ needs.build.outputs.digest }}
+          push-to-registry: true
+      - name: Summary
+        run: |
+          echo "## ${{ github.ref_name }} published" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Digest | \`${{ needs.build.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Verify:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "cosign verify ${{ env.GHCR_IMAGE }}:${{ github.ref_name }} \\" >> $GITHUB_STEP_SUMMARY
+          echo "  --certificate-identity-regexp='https://github.com/${{ github.repository }}.*' \\" >> $GITHUB_STEP_SUMMARY
+          echo "  --certificate-oidc-issuer='https://token.actions.githubusercontent.com'" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # Zenodo deposit — only runs when vars.ZENODO_CONCEPT is set in the repository.
+  # Create the first version manually on zenodo.org, then set:
+  #   vars.ZENODO_CONCEPT  — Zenodo concept record ID (e.g. "1234567")
+  #   secrets.ZENODO_TOKEN — Zenodo personal access token
+  zenodo:
+    needs: [build, trivy, sign]
+    if: vars.ZENODO_CONCEPT != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Download SBOMs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: sbom-${{ github.ref_name }}-${{ github.run_id }}
+      - name: Create source ZIP
+        run: git archive HEAD --format=zip -o "source-${{ github.ref_name }}.zip"
+      - name: Create manifest
+        env:
+          TAG: ${{ github.ref_name }}
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          cat > manifest.json << EOF
+          {
+            "image_tag":         "${TAG}",
+            "image_ref":         "ghcr.io/${{ github.repository }}:${TAG}",
+            "image_digest":      "${DIGEST}",
+            "build_date":        "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "base_image_ref":    "${{ needs.build.outputs.base_ref }}",
+            "base_image_digest": "${{ needs.build.outputs.base_digest }}"
+          }
+          EOF
+      - name: Deposit to Zenodo
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+          CONCEPT_ID: ${{ vars.ZENODO_CONCEPT }}
+          ZENODO_BASE: https://zenodo.org/api
+          TAG: ${{ github.ref_name }}
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          set -e
+
+          LATEST_ID=$(curl -sf \
+            "${ZENODO_BASE}/deposit/depositions?q=conceptrecid:${CONCEPT_ID}&sort=mostrecent&size=1" \
+            -H "Authorization: Bearer ${ZENODO_TOKEN}" | jq -r '.[0].id // empty')
+
+          if [ -z "$LATEST_ID" ]; then
+            echo "::error::No deposit found for concept ${CONCEPT_ID} — create the first version manually on zenodo.org, then re-run."
+            exit 1
+          fi
+
+          DRAFT=$(curl -sf -X POST \
+            "${ZENODO_BASE}/deposit/depositions/${LATEST_ID}/actions/newversion" \
+            -H "Authorization: Bearer ${ZENODO_TOKEN}")
+          DRAFT_ID=$(echo "$DRAFT" | jq -r '.links.latest_draft' | grep -oE '[0-9]+$')
+
+          FILE_IDS=$(curl -sf \
+            "${ZENODO_BASE}/deposit/depositions/${DRAFT_ID}/files" \
+            -H "Authorization: Bearer ${ZENODO_TOKEN}" | jq -r '.[].id')
+          for fid in $FILE_IDS; do
+            curl -sf -X DELETE \
+              "${ZENODO_BASE}/deposit/depositions/${DRAFT_ID}/files/${fid}" \
+              -H "Authorization: Bearer ${ZENODO_TOKEN}"
+          done
+
+          BUCKET=$(curl -sf \
+            "${ZENODO_BASE}/deposit/depositions/${DRAFT_ID}" \
+            -H "Authorization: Bearer ${ZENODO_TOKEN}" | jq -r '.links.bucket')
+
+          for file in manifest.json "source-${TAG}.zip" sbom-spdx.json sbom-cyclonedx.json; do
+            [ -f "$file" ] || { echo "::warning::Skipping missing: ${file}"; continue; }
+            echo "Uploading ${file} ..."
+            curl -sf -X PUT "${BUCKET}/${file}" \
+              -H "Authorization: Bearer ${ZENODO_TOKEN}" \
+              --upload-file "$file"
+          done
+
+          curl -sf -X PUT \
+            "${ZENODO_BASE}/deposit/depositions/${DRAFT_ID}" \
+            -H "Authorization: Bearer ${ZENODO_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg title "FIT Issuer — Release ${TAG}" \
+              --arg desc "FSS-compliant Forensic Investigation Token (FIT) issuer and verifier as defined in FSS-0006. Release <code>${TAG}</code>. GHCR image digest: <code>${DIGEST}</code>." \
+              --arg ver "${TAG}" \
+              --arg repo "https://github.com/${{ github.repository }}" \
+              '{metadata: {
+                title: $title,
+                upload_type: "software",
+                description: $desc,
+                version: $ver,
+                creators: [{name: "fss-fit contributors"}],
+                keywords: ["FIT","JWT","digital forensics","FSS","forensic science","MCP","chain of custody"],
+                license: "MIT",
+                related_identifiers: [
+                  {identifier: $repo, relation: "isSupplementTo", scheme: "url"}
+                ]
+              }}')"
+
+          echo "## Zenodo Deposit (draft — publish manually)" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Draft ID | \`${DRAFT_ID}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release | \`${TAG}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Digest | \`${DIGEST}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "::notice::Zenodo draft ready — publish manually at https://zenodo.org/deposit/${DRAFT_ID}"

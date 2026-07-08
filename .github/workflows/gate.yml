@@ -4,13 +4,26 @@ on:
     branches: [main]
   pull_request:
 jobs:
-  gate:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a
         with:
           go-version: "1.22"
+          cache: true
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.62.2
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a
+        with:
+          go-version: "1.22"
+          cache: true
       - run: go vet ./...
       - run: go test ./internal/... -race -count=1
       - run: go test ./tests/integration/... -count=1 -timeout 60s
